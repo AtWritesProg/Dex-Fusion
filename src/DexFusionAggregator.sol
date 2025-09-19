@@ -202,4 +202,161 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         });
         amountOut = IUniswapV3Router(params.dexRouter).exactInputSingle(v3Params);
     }
+
+    /**
+     * @dev Get quotes from all supported DEXs
+     */
+
+    function getAllQuotes(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn
+    ) external view returns (RouteQuote[] memory quotes) {
+        uint256 activeCount = 0;
+
+        // Count active DEXs
+        for (uint256 i = 0; i < dexList.length; i++) {
+            if (supportedDexs[dexList[i]].isActive) {
+                activeCount++;
+            }
+        }
+
+        quotes = new RouteQuote[](activeCount);
+        uint256 index = 0;
+
+        for (uint256 i = 0; i < dexList.length; i++) {
+            address dexRouter = dexList[i];
+            if (supportedDexs[dexRouter].isActive) {
+                try this.getQuoteFromDex(tokenIn, tokenOut, amountIn, dexRouter)
+                returns (uint256 amountOut) {
+                    quotes[index] = RouteQuote({
+                        dexRouter: dexRouter,
+                        amountOut: amountOut,
+                        gasEstimate: _estimateGas(dexRouter),
+                        fee: supportedDexs[dexRouter].fee,
+                        dexName: supportedDexs[dexRouter].name
+                    });
+                    index++;
+                } catch {
+                    continue;
+                }
+            }
+        }
+
+        // Resize array to actual count
+        assembly {
+            mstore(quotes, index)
+        }
+    }
+
+
+    function getQuoteFromDex(address tokenIn, address tokenOut, uint256 amountIn, address dexRouter) external view returns (uint256 amountOut) {
+        require(supportedDexs[dexRouter].isActive, "Dex not Active");
+
+        // Only support V2 style quotes for now
+        if (supportedDexs[dexRouter].dexType == UNISWAP_V2_TYPE) {
+            address[] memory path = new address[](2);
+            path[0] = tokenIn;
+            path[1] = tokenOut;
+
+            try IUniswapV2Router(dexRouter).getAmountsOut(amountIn, path) returns (uint256[] memory amounts) {
+                amountOut = amounts[1];
+            } catch {
+                amountOut = 0;
+            }
+        } else {
+            amountOut = 0;
+        }
+    }
+
+    /**
+     * @dev Find the best routes for a swap
+     */
+
+    function findBestRoute(address tokenIn, address tokenOut, uint256 amountIn)external view returns (address bestDex, uint256 bestAmountOut){
+        RouteQuote[] memory quotes = this.getAllQuotes(tokenIn, tokenOut, amountIn);
+
+        bestAmountOut = 0;
+        bestDex = address(0);
+
+        for (uint256 i = 0; i < quotes.length; i++) {
+            if (quotes[i].amountOut > bestAmountOut) {
+                bestAmountOut = quotes[i].amountOut;
+                bestDex = quotes[i].dexRouter;
+            }
+        }
+    }
+
+    /**
+     * @dev Estimate gas for DEX swap
+     */
+
+    function _estimateGas(address dexRouter) internal view returns (uint256) {
+        DexInfo memory dexInfo = supportedDexs[dexRouter];
+        if(dexInfo.dexType == UNISWAP_V2_TYPE) {
+            return 150000;
+        } else if (dexInfo.dexType == UNISWAP_V3_TYPE) {
+            return 180000;
+        }
+        return 0;
+    }
+
+    /**
+     * @dev Update platform fee 
+     */
+
+    function updatePlatformFee(uint256 _newFee) external onlyOwner {
+        require(_newFee <= 1000 , "Fee too high");
+        uint256 oldFee = platformFee;
+        platformFee = _newFee;
+        emit FeeUpdated(oldFee, _newFee);
+    }
+
+    /**
+     * @dev Update fee recipient
+     */
+    function updateFeeRecipient(address _newRecipient) external onlyOwner {
+        require(_newRecipient != address(0), "Invalid address");
+        feeRecipient = _newRecipient;
+    }
+
+    /**
+     * @dev Emergency Function to recover stuck tokens
+     */
+    function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
+        IERC20(token).safeTransfer(owner(), amount);
+    }
+
+    /**
+     * @dev Get total number of supported DEXs
+     */
+    function getTotalDexs() external view returns (uint256) {
+        return dexList.length;
+    }
+
+    /**
+     * @dev Get all active DEXs
+     */
+    function getAllActiveDexs() external view returns (address[] memory) {
+        uint256 activeCount = 0;
+
+        // Count active DEXs
+        for (uint256 i = 0; i < dexList.length; i++) {
+            if (supportedDexs[dexList[i]].isActive) {
+                activeCount++;
+            }
+        }
+
+        address[] memory activeDexs = new address[](activeCount);
+        uint256 index = 0;
+
+        for (uint256 i = 0; i < dexList.length; i++) {
+            if (supportedDexs[dexList[i]].isActive) {
+                activeDexs[index] = dexList[i];
+                index++;
+            }
+        }
+        return activeDexs;
+    }
+
 }
