@@ -176,11 +176,127 @@ contract LiquidityAnalytics is Ownable {
                     index++;
                 }
             }
+
+            return result;
         }
 
         /**
          * @dev Get top pools by liquidity
          */
+        function getTopPoolsByLiquidity(uint256 limit) external view returns (PoolInfo[] memory) {
+            require(limit > 0 && limit < allPools.length, "Invalid Limit");
+
+            PoolInfo[] memory allActivePools = new PoolInfo[](allPools.length);
+            uint256 activeCount = 0;
+
+            // Get all active Pool
+            for (uint256 i = 0; i < allPools.length; i++) {
+                if (pools[allPools[i]].isActive) {
+                    allActivePools[activeCount] = pools[allPools[i]];
+                    activeCount++;
+                }
+            }
+
+            // Sort by liquidity
+            for (uint256 i =0; i < activeCount-1; i++) {
+                for (uint256 j = 0; j < activeCount - i - 1; j++) {
+                    if (allActivePools[j].liquidity < allActivePools[j + 1].liquidity) {
+                        PoolInfo memory temp = allActivePools[j];
+                        allActivePools[j] = allActivePools[j + 1];
+                        allActivePools[j + 1] = temp;
+                    }
+                }
+            }
+
+            // Return top N pools
+            uint256 returnCount = limit < activeCount ? limit : activeCount;
+            PoolInfo[] memory result = new PoolInfo[](returnCount);
+            
+            for (uint256 i = 0; i < returnCount; i++) {
+                result[i] = allActivePools[i];
+            }
+
+            return result;
+        }
+
+        /**
+         * @dev Get Volume history for a pool
+         */
+        function getVolumeHistory(address poolAddress, uint256 numhours) external view returns (VolumeSnapshot[] memory) {
+            require(numhours > 0 && numhours <= MAX_SNAPSHOTS, "Invalid time range");
+
+            VolumeSnapshot[] storage history = volumeHistory[poolAddress];
+            uint256 startIndex = history.length > numhours ? history.length - numhours : 0;
+            uint256 resultLength = history.length - startIndex;
+
+            VolumeSnapshot[] memory result = new VolumeSnapshot[](resultLength);
+        
+            for (uint256 i = 0; i < resultLength; i++) {
+                result[i] = history[startIndex + i];
+            }
+            
+            return result;
+        }
+
+        /**
+         * @dev  Calculate Impermanent Loss for a position
+         */
+        function calculateImpermanentLoss(
+            uint256 initialPrice0,
+            uint256 initialPrice1,
+            uint256 currentPrice0,
+            uint256 currentPrice1,
+            uint256 amount0,
+            uint256 amount1
+        ) external pure returns (uint256 impermanentLoss) {
+            //Calculate price ratios
+            uint256 initialRatio = (initialPrice0 * 1e18) / initialPrice1;
+            uint256 currentRatio = (currentPrice0 * 1e18) / currentPrice1;
+
+            // Hodl Value
+            uint256 hodlValue = ((amount0 * currentPrice0) +(amount1 * currentPrice1)) / 1e18;
+
+            // Calculate LP value
+            uint256 sqrtRatio = sqrt((currentRatio * 1e18) / initialRatio);
+            uint256 lpValue = (2* sqrt(amount0 * amount1 * currentPrice0 * currentPrice1)) / 1e18;
+            lpValue = (lpValue * sqrtRatio) / 1e9;
+
+            if (hodlValue > lpValue) {
+                impermanentLoss = ((hodlValue - lpValue) * 10000) / hodlValue; // In basis points
+            } else {
+                impermanentLoss = 0;
+            }
+        }
+
+        /**
+         * @dev Get token analytics 
+         */
+        function getTokenAnalytics(address token) external view returns (
+            TokenMetrics memory metrics,
+            PoolInfo[] memory topPools
+        ) {
+            metrics = tokenMetrics[token];
+
+            // Get top 5 pools for this token
+            uint256 count = 0;
+            for (uint256 i = 0; i < allPools.length; i++) {
+                PoolInfo memory pool = pools[allPools[i]];
+                if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
+                    count++;
+                }
+            }
+
+            topPools = new PoolInfo[](count > 5 ? 5 : count);
+            uint256 index = 0;
+
+            for (uint256 i = 0; i < allPools.length && index < topPools.length; i++) {
+                PoolInfo memory pool = pools[allPools[i]];
+                if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
+                    topPools[index] = pool;
+                    index++;
+                }
+            }            
+        }
 
         /**
          * @dev Internal function to update token metrics based on current pool data.
@@ -256,4 +372,44 @@ contract LiquidityAnalytics is Ownable {
                 history.pop();
             }
         }
+
+        function sqrt(uint256 x) internal pure returns (uint256) {
+            if (x == 0) return 0;
+            uint256 z = (x + 1) / 2;
+            uint256 y = x;
+            while (z < y) {
+                y = z;
+                z = (x / z + z ) / 2;
+            }
+            return y;
+        }
+
+        /**
+         * @dev Authorize address to update data 
+         */
+        function setAuthorizedUpdater(address updater, bool authorized) external onlyOwner {
+            authorizedUpdaters[updater] = authorized;
+        }
+
+        /**
+         * @dev Deactivate Pool
+         */
+        function deactivatePool(address poolAddress) external onlyOwner {
+            pools[poolAddress].isActive = false;
+        }
+
+        /**
+         * @dev Get total number of pools
+         */
+        function getTotalPools() external view returns (uint256) {
+            return allPools.length;
+        }
+
+        /**
+         * @dev Get total number of tracked tokens 
+         */
+        function getTotalTrackedTokens() external view returns (uint256) {
+            return trackedTokens.length;
+        }
+
 }

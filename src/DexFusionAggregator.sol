@@ -97,15 +97,17 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
     uint8 public constant UNISWAP_V3_TYPE = 1;
 
     constructor(address _feeRecipient) Ownable(msg.sender) {
+        require(_feeRecipient != address(0), "Invalid fee recipient"); // Add this
         feeRecipient = _feeRecipient;
     }
 
     /**
      * @dev Add a new DEX to the aggregator
      */
-    function addDex(address _router, string memory _name, uint256 _fee,uint8 _dexType) external onlyOwner {
+    function addDex(address _router, string memory _name, uint256 _fee, uint8 _dexType) external onlyOwner {
         require(_router != address(0), "Invalid router address");
         require(_fee <= 1000, "Fee too high");
+        require(_dexType <= 1, "Invalid DEX type");
 
         supportedDexs[_router] = DexInfo({
             router: _router,
@@ -122,7 +124,7 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
     /**
      * @dev Execute a swap through the specified DEX
      */
-    function executeSwap(SwapParams calldata params) external nonReentrant returns (uint256 amountOut) {
+    function executeSwap(SwapParams memory params) external nonReentrant returns (uint256 amountOut) {
         require(params.deadline >= block.timestamp, "Swap Expired");
         require(supportedDexs[params.dexRouter].isActive, "DEX not supported");
         require(params.amountIn > 0, "Invalid Amount");
@@ -144,6 +146,20 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         //Execute swap based on DEX type
         amountOut = _executeSwapOnDex(params, swapAmount);
 
+        require(amountOut >= params.amountOutMin, "Insufficient output amount");
+
+        // Transfer output tokens to user
+        IERC20(params.tokenOut).safeTransfer(msg.sender, amountOut);
+
+        emit SwapExecuted(
+            msg.sender,
+            params.tokenIn,
+            params.tokenOut,
+            params.amountIn,
+            amountOut,
+            params.dexRouter,
+            feeAmount
+        );
     }
 
     /**
@@ -183,7 +199,7 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         );
 
         uint256 balanceAfter = IERC20(params.tokenOut).balanceOf(address(this));
-        amountOut = balanceAfter - balanceAfter - balanceBefore;
+        amountOut = balanceAfter - balanceBefore;
     }
 
     function _executeUniswapV3Swap(
@@ -269,6 +285,11 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         }
     }
 
+    function toggleDexStatus(address dexRouter) external onlyOwner {
+       require(supportedDexs[dexRouter].router != address(0), "DEX not found");
+       supportedDexs[dexRouter].isActive = !supportedDexs[dexRouter].isActive;
+   }
+
     /**
      * @dev Find the best routes for a swap
      */
@@ -337,7 +358,7 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
     /**
      * @dev Get all active DEXs
      */
-    function getAllActiveDexs() external view returns (address[] memory) {
+    function getActiveDexs() external view returns (address[] memory) {
         uint256 activeCount = 0;
 
         // Count active DEXs
