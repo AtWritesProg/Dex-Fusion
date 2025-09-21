@@ -125,9 +125,9 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
      * @dev Execute a swap through the specified DEX
      */
     function executeSwap(SwapParams memory params) external nonReentrant returns (uint256 amountOut) {
-        require(params.deadline >= block.timestamp, "Swap Expired");
+        require(params.deadline >= block.timestamp, "Swap expired");
         require(supportedDexs[params.dexRouter].isActive, "DEX not supported");
-        require(params.amountIn > 0, "Invalid Amount");
+        require(params.amountIn > 0, "Invalid amount");
 
         IERC20(params.tokenIn).safeTransferFrom(msg.sender,address(this),params.amountIn);
 
@@ -337,7 +337,7 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
      * @dev Update fee recipient
      */
     function updateFeeRecipient(address _newRecipient) external onlyOwner {
-        require(_newRecipient != address(0), "Invalid address");
+        require(_newRecipient != address(0), "Invalid recipient");
         feeRecipient = _newRecipient;
     }
 

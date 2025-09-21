@@ -72,7 +72,7 @@ contract DexFusionAggregatorTest is Test {
         aggregator.addDex(SUSHISWAP_ROUTER, "SushiSwap", 25, UNISWAP_V2_TYPE);
     }
 
-    function testDeployment() public {
+    function testDeployment() public view {
         assertEq(aggregator.platformFee(), PLATFORM_FEE);
         assertEq(aggregator.feeRecipient(), feeRecipient);
         assertEq(aggregator.owner(), owner);
@@ -122,4 +122,324 @@ contract DexFusionAggregatorTest is Test {
         vm.expectRevert("Invalid DEX type");
         aggregator.addDex(makeAddr("invalidDex"), "Invalid DEX", 30, 2); // Invalid type
     }
+
+    function testGetQuoteFromDex() public {
+        // Mock the getAmountsOut call for V2 router
+        address[] memory path = new address [](2);
+        path[0] = address(tokenA);
+        path[1] = address(tokenB);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 1000 * 10**18;
+        amounts[1] = 1800 * 10**18;
+
+        vm.mockCall(
+            UNISWAP_V2_ROUTER,
+            abi.encodeWithSignature("getAmountsOut(uint256,address[])", 1000 * 10**18 , path),
+            abi.encode(amounts)
+        );
+
+        uint256 quote = aggregator.getQuoteFromDex(
+            address(tokenA),
+            address(tokenB),
+            1000 * 10**18,
+            UNISWAP_V2_ROUTER
+        );
+
+        assertEq(quote, 1800 * 10**18);
+    }
+
+    function testGetQuoteFromV3Dex() public {
+        // V3 quotes should return 0 for now (not implemented)
+        uint256 quote = aggregator.getQuoteFromDex(
+            address(tokenA),
+            address(tokenB),
+            1000 * 10**18,
+            UNISWAP_V3_ROUTER
+        );
+
+        assertEq(quote, 0);
+    }
+
+    function testFindBestRoute() public {
+        // Mock Uniswap V2 quote
+        address[] memory path = new address[](2);
+        path[0] = address(tokenA);
+        path[1] = address(tokenB);
+        
+        uint256[] memory uniAmounts = new uint256[](2);
+        uniAmounts[0] = 1000 * 10**18;
+        uniAmounts[1] = 1800 * 10**18;
+        
+        vm.mockCall(
+            UNISWAP_V2_ROUTER,
+            abi.encodeWithSignature("getAmountsOut(uint256,address[])", 1000 * 10**18, path),
+            abi.encode(uniAmounts)
+        );
+
+        // Mock SushiSwap quote (better rate)
+        uint256[] memory sushiAmounts = new uint256[](2);
+        sushiAmounts[0] = 1000 * 10**18;
+        sushiAmounts[1] = 1850 * 10**18; // Better rate
+        
+        vm.mockCall(
+            SUSHISWAP_ROUTER,
+            abi.encodeWithSignature("getAmountsOut(uint256,address[])", 1000 * 10**18, path),
+            abi.encode(sushiAmounts)
+        );
+
+        // Find best route
+        (address bestDex, uint256 bestAmount) = aggregator.findBestRoute(
+            address(tokenA),
+            address(tokenB),
+            1000 * 10**18
+        );
+
+        assertEq(bestDex, SUSHISWAP_ROUTER);
+        assertEq(bestAmount, 1850 * 10**18);
+    }
+
+    function testGetAllQuotes() public {
+        // Mock quotes for all DEXs
+        address[] memory path = new address[](2);
+        path[0] = address(tokenA);
+        path[1] = address(tokenB);
+        
+        // Mock Uniswap V2
+        uint256[] memory uniAmounts = new uint256[](2);
+        uniAmounts[0] = 1000 * 10**18;
+        uniAmounts[1] = 1800 * 10**18;
+        
+        vm.mockCall(
+            UNISWAP_V2_ROUTER,
+            abi.encodeWithSignature("getAmountsOut(uint256,address[])", 1000 * 10**18, path),
+            abi.encode(uniAmounts)
+        );
+
+        // Mock SushiSwap
+        uint256[] memory sushiAmounts = new uint256[](2);
+        sushiAmounts[0] = 1000 * 10**18;
+        sushiAmounts[1] = 1850 * 10**18;
+        
+        vm.mockCall(
+            SUSHISWAP_ROUTER,
+            abi.encodeWithSignature("getAmountsOut(uint256,address[])", 1000 * 10**18, path),
+            abi.encode(sushiAmounts)
+        );
+
+        DexFusionAggregator.RouteQuote[] memory quotes = aggregator.getAllQuotes(
+            address(tokenA),
+            address(tokenB),
+            1000 * 10**18
+        );
+
+        // Should have quotes from V2 DEXs (V3 returns 0 so might be filtered)
+        assertGe(quotes.length, 2);
+        
+        // Check that we got quotes
+        bool foundUniswap = false;
+        bool foundSushi = false;
+        
+        for (uint256 i = 0; i < quotes.length; i++) {
+            if (quotes[i].dexRouter == UNISWAP_V2_ROUTER) {
+                foundUniswap = true;
+                assertEq(quotes[i].amountOut, 1800 * 10**18);
+            }
+            if (quotes[i].dexRouter == SUSHISWAP_ROUTER) {
+                foundSushi = true;
+                assertEq(quotes[i].amountOut, 1850 * 10**18);
+            }
+        }
+        
+        assertTrue(foundUniswap);
+        assertTrue(foundSushi);
+    }
+
+    function testUpdatePlatformFee() public {
+        uint256 newFee = 50; // 0.5%
+        aggregator.updatePlatformFee(newFee);
+        assertEq(aggregator.platformFee(), newFee);
+    }
+
+    function testUpdatePlatformFeeOnlyOwner() public {
+        vm.prank(user1);
+        // Expect any revert (doesn't check specific error message)
+        vm.expectRevert();
+        aggregator.updatePlatformFee(50);
+    }
+
+    function testUpdatePlatformFeeInvalidFee() public {
+        vm.expectRevert("Fee too high");
+        aggregator.updatePlatformFee(1001); // > 10%
+    }
+
+    function testToggleDexStatus() public {
+        // Initially active
+        (, , bool isActive, ,) = aggregator.supportedDexs(UNISWAP_V2_ROUTER);
+        assertTrue(isActive);
+
+        // Toggle to inactive
+        aggregator.toggleDexStatus(UNISWAP_V2_ROUTER);
+        (, , isActive, ,) = aggregator.supportedDexs(UNISWAP_V2_ROUTER);
+        assertFalse(isActive);
+
+        // Toggle back to active
+        aggregator.toggleDexStatus(UNISWAP_V2_ROUTER);
+        (, , isActive, ,) = aggregator.supportedDexs(UNISWAP_V2_ROUTER);
+        assertTrue(isActive);
+    }
+
+    function testUpdateFeeRecipient() public {
+        address newRecipient = makeAddr("newRecipient");
+        aggregator.updateFeeRecipient(newRecipient);
+        assertEq(aggregator.feeRecipient(), newRecipient);
+    }
+
+    function testUpdateFeeRecipientInvalidAddress() public {
+        vm.expectRevert("Invalid recipient");
+        aggregator.updateFeeRecipient(address(0));
+    }
+
+    function testEmergencyWithdraw() public {
+        // Send some tokens to the contract
+        tokenA.transfer(address(aggregator), 1000 * 10**18);
+        
+        uint256 contractBalance = tokenA.balanceOf(address(aggregator));
+        uint256 ownerBalanceBefore = tokenA.balanceOf(owner);
+        
+        aggregator.emergencyWithdraw(address(tokenA), contractBalance);
+        
+        assertEq(tokenA.balanceOf(address(aggregator)), 0);
+        assertEq(tokenA.balanceOf(owner), ownerBalanceBefore + contractBalance);
+    }
+
+    function testGetTotalDexs() public {
+        assertEq(aggregator.getTotalDexs(), 3); // We added 3 DEXs in setUp
+    }
+
+    function testGetActiveDexs() public {
+        address[] memory activeDexs = aggregator.getActiveDexs();
+        assertEq(activeDexs.length, 3);
+        
+        // Toggle one DEX off
+        aggregator.toggleDexStatus(UNISWAP_V2_ROUTER);
+        activeDexs = aggregator.getActiveDexs();
+        assertEq(activeDexs.length, 2);
+    }
+
+    // Swap execution tests
+    function testSwapWithZeroAmount() public {
+        DexFusionAggregator.SwapParams memory params = DexFusionAggregator.SwapParams({
+            tokenIn: address(tokenA),
+            tokenOut: address(tokenB),
+            amountIn: 0,
+            amountOutMin: 0,
+            dexRouter: UNISWAP_V2_ROUTER,
+            swapData: "",
+            deadline: block.timestamp + 3600,
+            poolFee: 3000
+        });
+        
+        vm.prank(user1);
+        vm.expectRevert("Invalid amount");
+        aggregator.executeSwap(params);
+    }
+
+    function testSwapWithExpiredDeadline() public {
+        DexFusionAggregator.SwapParams memory params = DexFusionAggregator.SwapParams({
+            tokenIn: address(tokenA),
+            tokenOut: address(tokenB),
+            amountIn: 1000 * 10**18,
+            amountOutMin: 1700 * 10**18,
+            dexRouter: UNISWAP_V2_ROUTER,
+            swapData: "",
+            deadline: block.timestamp - 1, // Expired
+            poolFee: 3000
+        });
+        
+        vm.prank(user1);
+        vm.expectRevert("Swap expired");
+        aggregator.executeSwap(params);
+    }
+
+    function testSwapWithUnsupportedDex() public {
+        address unsupportedDex = makeAddr("unsupportedDex");
+        
+        DexFusionAggregator.SwapParams memory params = DexFusionAggregator.SwapParams({
+            tokenIn: address(tokenA),
+            tokenOut: address(tokenB),
+            amountIn: 1000 * 10**18,
+            amountOutMin: 1700 * 10**18,
+            dexRouter: unsupportedDex,
+            swapData: "",
+            deadline: block.timestamp + 3600,
+            poolFee: 3000
+        });
+        
+        vm.prank(user1);
+        vm.expectRevert("DEX not supported");
+        aggregator.executeSwap(params);
+    }
+
+    // Fuzz Tests
+    function testFuzzSwapAmounts(uint256 amountIn) public {
+        amountIn = bound(amountIn, 1 * 10**15, 1000 * 10**18); // 0.001 to 1000 tokens
+        
+        uint256 expectedOutput = (amountIn * 80) / 100;
+        
+        address[] memory path = new address[](2);
+        path[0] = address(tokenA);
+        path[1] = address(tokenB);
+        
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = amountIn;
+        amounts[1] = expectedOutput;
+        
+        vm.mockCall(
+            UNISWAP_V2_ROUTER,
+            abi.encodeWithSignature("getAmountsOut(uint256,address[])", amountIn, path),
+            abi.encode(amounts)
+        );
+        
+        uint256 quote = aggregator.getQuoteFromDex(
+            address(tokenA),
+            address(tokenB),
+            amountIn,
+            UNISWAP_V2_ROUTER
+        );
+        
+        assertEq(quote, expectedOutput);
+    }
+
+    function testFuzzPlatformFee(uint256 fee) public {
+        fee = bound(fee, 0, 1000); // 0% to 10%
+        
+        aggregator.updatePlatformFee(fee);
+        assertEq(aggregator.platformFee(), fee);
+    }
+
+    // Helper Functions
+    function _mockSuccessfulSwap(address router, uint256 amountIn, uint256 amountOut) internal {
+        address[] memory path = new address[](2);
+        path[0] = address(tokenA);
+        path[1] = address(tokenB);
+        
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = amountIn;
+        amounts[1] = amountOut;
+        
+        vm.mockCall(
+            router,
+            abi.encodeWithSignature("getAmountsOut(uint256,address[])", amountIn, path),
+            abi.encode(amounts)
+        );
+        
+        vm.mockCall(
+            router,
+            abi.encodeWithSignature("swapExactTokensForTokens(uint256,uint256,address[],address,uint256)"),
+            abi.encode(amounts)
+        );
+    }
+
+    receive() external payable {}
 }
