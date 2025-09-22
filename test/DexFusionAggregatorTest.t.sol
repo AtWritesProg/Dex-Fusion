@@ -149,7 +149,7 @@ contract DexFusionAggregatorTest is Test {
         assertEq(quote, 1800 * 10**18);
     }
 
-    function testGetQuoteFromV3Dex() public {
+    function testGetQuoteFromV3Dex() public view {
         // V3 quotes should return 0 for now (not implemented)
         uint256 quote = aggregator.getQuoteFromDex(
             address(tokenA),
@@ -313,7 +313,7 @@ contract DexFusionAggregatorTest is Test {
         assertEq(tokenA.balanceOf(owner), ownerBalanceBefore + contractBalance);
     }
 
-    function testGetTotalDexs() public {
+    function testGetTotalDexs() public view {
         assertEq(aggregator.getTotalDexs(), 3); // We added 3 DEXs in setUp
     }
 
