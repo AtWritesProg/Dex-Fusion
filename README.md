@@ -38,6 +38,7 @@ Contract Addresses
 Sepolia Testnet
 
 DexFusionAggregator: 0x73A61b847b030a2F84cb6DD59c6A6Dc59AdcB6f4
+
 LiquidityAnalytics: 0xFB45bcC417a72ad5c6877C6359869f5c9d21c2dD
 
 Test Tokens (Sepolia)
