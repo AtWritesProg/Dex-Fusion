@@ -184,40 +184,47 @@ contract LiquidityAnalytics is Ownable {
          * @dev Get top pools by liquidity
          */
         function getTopPoolsByLiquidity(uint256 limit) external view returns (PoolInfo[] memory) {
-            require(limit > 0 && limit < allPools.length, "Invalid Limit");
+            require(limit > 0, "Invalid Limit");
 
-            PoolInfo[] memory allActivePools = new PoolInfo[](allPools.length);
+            // Step 1: collect active pools
+            PoolInfo[] memory temp = new PoolInfo[](allPools.length);
             uint256 activeCount = 0;
-
-            // Get all active Pool
             for (uint256 i = 0; i < allPools.length; i++) {
                 if (pools[allPools[i]].isActive) {
-                    allActivePools[activeCount] = pools[allPools[i]];
+                    temp[activeCount] = pools[allPools[i]];
                     activeCount++;
                 }
             }
+            require(activeCount > 0, "No active pools");
 
-            // Sort by liquidity
-            for (uint256 i =0; i < activeCount-1; i++) {
+            // Step 2: shrink array to activeCount only
+            PoolInfo[] memory allActivePools = new PoolInfo[](activeCount);
+            for (uint256 i = 0; i < activeCount; i++) {
+                allActivePools[i] = temp[i];
+            }
+
+            // Step 3: bubble sort only over activeCount
+            for (uint256 i = 0; i < activeCount - 1; i++) {
                 for (uint256 j = 0; j < activeCount - i - 1; j++) {
                     if (allActivePools[j].liquidity < allActivePools[j + 1].liquidity) {
-                        PoolInfo memory temp = allActivePools[j];
+                        PoolInfo memory t = allActivePools[j];
                         allActivePools[j] = allActivePools[j + 1];
-                        allActivePools[j + 1] = temp;
+                        allActivePools[j + 1] = t;
                     }
                 }
             }
 
-            // Return top N pools
+            // Step 4: return top N
             uint256 returnCount = limit < activeCount ? limit : activeCount;
             PoolInfo[] memory result = new PoolInfo[](returnCount);
-            
             for (uint256 i = 0; i < returnCount; i++) {
                 result[i] = allActivePools[i];
             }
 
             return result;
         }
+
+
 
         /**
          * @dev Get Volume history for a pool
@@ -249,21 +256,34 @@ contract LiquidityAnalytics is Ownable {
             uint256 amount0,
             uint256 amount1
         ) external pure returns (uint256 impermanentLoss) {
-            //Calculate price ratios
-            uint256 initialRatio = (initialPrice0 * 1e18) / initialPrice1;
-            uint256 currentRatio = (currentPrice0 * 1e18) / currentPrice1;
-
-            // Hodl Value
-            uint256 hodlValue = ((amount0 * currentPrice0) +(amount1 * currentPrice1)) / 1e18;
-
-            // Calculate LP value
-            uint256 sqrtRatio = sqrt((currentRatio * 1e18) / initialRatio);
-            uint256 lpValue = (2* sqrt(amount0 * amount1 * currentPrice0 * currentPrice1)) / 1e18;
-            lpValue = (lpValue * sqrtRatio) / 1e9;
-
+            // Prevent division by zero
+            require(initialPrice0 > 0 && initialPrice1 > 0 && currentPrice0 > 0 && currentPrice1 > 0, "Invalid prices");
+            
+            // Calculate price ratio (how much token0 changed relative to token1)
+            // k = (P0_current / P0_initial) / (P1_current / P1_initial)
+            // Rearranged to avoid precision loss: k = (P0_current * P1_initial) / (P0_initial * P1_current)
+            uint256 k = (currentPrice0 * initialPrice1 * 1e18) / (initialPrice0 * currentPrice1);
+            
+            // If k = 1e18 (no relative price change), there's no impermanent loss
+            if (k == 1e18) {
+                return 0;
+            }
+            
+            // HODL value
+            uint256 hodlValue = (amount0 * currentPrice0 + amount1 * currentPrice1) / 1e18;
+            
+            // LP multiplier = 2 * sqrt(k) / (1 + k)
+            uint256 sqrtK = sqrt(k); // k already has 1e18 precision
+            uint256 numerator = 2 * sqrtK;
+            uint256 denominator = 1e18 + k / 1e18; // Normalize k back for addition
+            uint256 lpMultiplier = (numerator * 1e18) / denominator;
+            
+            uint256 lpValue = (hodlValue * lpMultiplier) / 1e18;
+            
             if (hodlValue > lpValue) {
                 impermanentLoss = ((hodlValue - lpValue) * 10000) / hodlValue; // In basis points
             } else {
+                // This shouldn't happen with correct IL formula, but safety check
                 impermanentLoss = 0;
             }
         }
