@@ -1,6 +1,7 @@
 //SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.19;
+
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -19,21 +20,13 @@ contract LiquidityAnalyticsTest is Test {
     address public authorizedUpdater;
     address public dexRouter;
 
-    uint256 public constant INITIAL_BALANCE = 1000000 * 10**18;
+    uint256 public constant INITIAL_BALANCE = 1000000 * 10 ** 18;
 
     event PoolDataUpdated(
-        address indexed pool,
-        address indexed dex,
-        uint256 liquidity,
-        uint256 volume24h,
-        uint256 timestamp
+        address indexed pool, address indexed dex, uint256 liquidity, uint256 volume24h, uint256 timestamp
     );
 
-    event PriceUpdated(
-        address indexed token,
-        uint256 price,
-        uint256 timestamp
-    );
+    event PriceUpdated(address indexed token, uint256 price, uint256 timestamp);
 
     function setUp() public {
         // Set up accounts
@@ -49,13 +42,13 @@ contract LiquidityAnalyticsTest is Test {
         // Deploy test tokens
         tokenA = new TestERC20("Token A", "TKNA", 18, INITIAL_BALANCE);
         tokenB = new TestERC20("Token B", "TKNB", 18, INITIAL_BALANCE);
-        tokenC = new TestERC20("Token C", "TKNC", 6, INITIAL_BALANCE / 10**12);
+        tokenC = new TestERC20("Token C", "TKNC", 6, INITIAL_BALANCE / 10 ** 12);
 
         // Set up authorized updater
         analytics.setAuthorizedUpdater(authorizedUpdater, true);
     }
 
-    function testDeployment() view public {
+    function testDeployment() public view {
         assertEq(analytics.owner(), owner);
         assertTrue(analytics.authorizedUpdaters(owner));
         assertEq(analytics.getTotalPools(), 0);
@@ -80,92 +73,66 @@ contract LiquidityAnalyticsTest is Test {
         analytics.setAuthorizedUpdater(user2, true);
     }
 
-    // function testUpdatePoolData() public {
-    //     address poolAddress = makeAddr("TestPool");
-    //     uint256 liquidity = 1000000 * 10**18;
-    //     uint256 volume24h = 50000 * 10**18;
-    //     uint256 fees24h = 500 * 10**18;
-    //     uint256 apr = 1200;
+    function testUpdatePoolData() public {
+        address poolAddress = makeAddr("TestPool");
+        uint256 liquidity = 1000000 * 10 ** 18;
+        uint256 volume24h = 50000 * 10 ** 18;
+        uint256 fees24h = 500 * 10 ** 18;
+        uint256 apr = 1200;
 
-    //     vm.expectEmit(true,true,false,true);
-    //     emit PoolDataUpdated(poolAddress, dexRouter, liquidity, volume24h, block.timestamp);
+        vm.expectEmit(true, true, false, true);
+        emit PoolDataUpdated(poolAddress, dexRouter, liquidity, volume24h, block.timestamp);
 
-    //     analytics.updatePoolData(
-    //         poolAddress,
-    //         address(tokenA),
-    //         address(tokenB),
-    //         dexRouter,
-    //         "Uniswap V2",
-    //         liquidity,
-    //         volume24h,
-    //         fees24h,
-    //         apr
-    //     );
+        analytics.updatePoolData(
+            poolAddress, address(tokenA), address(tokenB), dexRouter, "Uniswap V2", liquidity, volume24h, fees24h, apr
+        );
 
-    //     (
-    //         address pool,
-    //         address token0,
-    //         address token1,
-    //         address router,
-    //         string memory dexName,
-    //         uint256 storedLiquidity,
-    //         uint256 storedVolume,
-    //         uint256 storedFees,
-    //         uint256 storedApr,
-    //         uint256 lastUpdated,
-    //         bool isActive
-    //     ) = analytics.pools(poolAddress);
+        (
+            address pool,
+            address token0,
+            address token1,
+            address router,
+            string memory dexName,
+            uint256 storedLiquidity,
+            uint256 storedVolume,
+            uint256 storedFees,
+            uint256 storedApr,
+            uint256 lastUpdated,
+            bool isActive
+        ) = analytics.pools(poolAddress);
 
-    //     assertEq(pool, poolAddress);
-    //     assertEq(token0, address(tokenA));
-    //     assertEq(token1, address(tokenB));
-    //     assertEq(router, dexRouter);
-    //     assertEq(dexName, "Uniswap V2");
-    //     assertEq(storedLiquidity, liquidity);
-    //     assertEq(storedVolume, volume24h);
-    //     assertEq(storedFees, fees24h);
-    //     assertEq(storedApr, apr);
-    //     assertTrue(isActive);
-    //     assertGt(lastUpdated, 0);
+        assertEq(pool, poolAddress);
+        assertEq(token0, address(tokenA));
+        assertEq(token1, address(tokenB));
+        assertEq(router, dexRouter);
+        assertEq(dexName, "Uniswap V2");
+        assertEq(storedLiquidity, liquidity);
+        assertEq(storedVolume, volume24h);
+        assertEq(storedFees, fees24h);
+        assertEq(storedApr, apr);
+        assertTrue(isActive);
+        assertGt(lastUpdated, 0);
 
-    //     // Check totals
-    //     assertEq(analytics.getTotalPools(), 1);
-    //     assertEq(analytics.getTotalTrackedTokens(), 2);
-    // }
+        // Check totals
+        assertEq(analytics.getTotalPools(), 1);
+        assertEq(analytics.getTotalTrackedTokens(), 2);
+    }
 
     function testUpdatePoolDataOnlyAuthorized() public {
         vm.prank(user1);
         vm.expectRevert("Not Authorized");
         analytics.updatePoolData(
-            makeAddr("pool"),
-            address(tokenA),
-            address(tokenB),
-            dexRouter,
-            "Test",
-            1000,
-            100,
-            10,
-            1000
+            makeAddr("pool"), address(tokenA), address(tokenB), dexRouter, "Test", 1000, 100, 10, 1000
         );
     }
 
     function testUpdatePoolDataInvalidAddress() public {
         vm.expectRevert("Invalid Pool address");
-        analytics.updatePoolData(
-            address(0),
-            address(tokenA),
-            address(tokenB),
-            dexRouter,
-            "Test",
-            1000,
-            100,
-            10,
-            1000
-        );
+        analytics.updatePoolData(address(0), address(tokenA), address(tokenB), dexRouter, "Test", 1000, 100, 10, 1000);
     }
 
     function testUpdateTokenPrice() public {
-        uint256 price = 1800 * 10**18; // $1800
+        uint256 price = 1800 * 10 ** 18; // $1800
 
         vm.expectEmit(true, false, false, true);
         emit PriceUpdated(address(tokenA), price, block.timestamp);
@@ -195,13 +162,13 @@ contract LiquidityAnalyticsTest is Test {
     function testUpdateTokenPriceOnlyAuthorized() public {
         vm.prank(user1);
         vm.expectRevert("Not Authorized");
-        analytics.updateTokenPrice(address(tokenA), 1000 * 10**18);
+        analytics.updateTokenPrice(address(tokenA), 1000 * 10 ** 18);
     }
 
     function testUpdateTokenPriceInvalidAddress() public {
         //Invalid Token Address
         vm.expectRevert("Invalid Token");
-        analytics.updateTokenPrice(address(0),1000 * 10**18);
+        analytics.updateTokenPrice(address(0), 1000 * 10 ** 18);
 
         //Invalid Price
         vm.expectRevert("Invalid Price");
@@ -219,9 +186,9 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "Uniswap V2",
-            1000000 * 10**18,
-            50000 * 10**18,
-            500 * 10**18,
+            1000000 * 10 ** 18,
+            50000 * 10 ** 18,
+            500 * 10 ** 18,
             1200
         );
 
@@ -231,9 +198,9 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "SushiSwap",
-            800000 * 10**18,
-            40000 * 10**18,
-            400 * 10**18,
+            800000 * 10 ** 18,
+            40000 * 10 ** 18,
+            400 * 10 ** 18,
             1100
         );
 
@@ -243,19 +210,19 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "PancakeSwap",
-            500000 * 10**18,
-            25000 * 10**18,
-            250 * 10**18,
+            500000 * 10 ** 18,
+            25000 * 10 ** 18,
+            250 * 10 ** 18,
             1000
         );
 
-        LiquidityAnalytics.PoolInfo[] memory pools = analytics.getPoolsForPair(address(tokenA),address(tokenB));
+        LiquidityAnalytics.PoolInfo[] memory pools = analytics.getPoolsForPair(address(tokenA), address(tokenB));
 
         assertEq(pools.length, 3);
-        assertEq(pools[0].poolAddress,pool1);
-        assertEq(pools[1].poolAddress,pool2);
+        assertEq(pools[0].poolAddress, pool1);
+        assertEq(pools[1].poolAddress, pool2);
 
-        //Get pools for tokenA/tokenB 
+        //Get pools for tokenA/tokenB
         pools = analytics.getPoolsForPair(address(tokenA), address(tokenB));
         assertEq(pools.length, 3);
         assertEq(pools[2].poolAddress, pool3);
@@ -273,9 +240,9 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "Pool 1",
-            500000 * 10**18, // Lowest liquidity
-            25000 * 10**18,
-            250 * 10**18,
+            500000 * 10 ** 18, // Lowest liquidity
+            25000 * 10 ** 18,
+            250 * 10 ** 18,
             1000
         );
 
@@ -285,9 +252,9 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenC),
             dexRouter,
             "Pool 2",
-            1000000 * 10**18, // Highest liquidity
-            50000 * 10**18,
-            500 * 10**18,
+            1000000 * 10 ** 18, // Highest liquidity
+            50000 * 10 ** 18,
+            500 * 10 ** 18,
             1200
         );
 
@@ -297,12 +264,12 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenC),
             dexRouter,
             "Pool 3",
-            750000 * 10**18, // Middle liquidity
-            37500 * 10**18,
-            375 * 10**18,
+            750000 * 10 ** 18, // Middle liquidity
+            37500 * 10 ** 18,
+            375 * 10 ** 18,
             1100
         );
-        
+
         LiquidityAnalytics.PoolInfo[] memory topPools = analytics.getTopPoolsByLiquidity(2);
 
         assertEq(topPools.length, 2);
@@ -315,7 +282,7 @@ contract LiquidityAnalyticsTest is Test {
         vm.expectRevert("Invalid Limit");
         analytics.getTopPoolsByLiquidity(0);
     }
-    
+
     function testGetVolumeHistory() public {
         address poolAddress = makeAddr("testPool");
 
@@ -326,9 +293,9 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "Test Pool",
-            1000000 * 10**18,
-            50000 * 10**18, // Initial volume
-            500 * 10**18,
+            1000000 * 10 ** 18,
+            50000 * 10 ** 18, // Initial volume
+            500 * 10 ** 18,
             1200
         );
 
@@ -341,9 +308,9 @@ contract LiquidityAnalyticsTest is Test {
                 address(tokenB),
                 dexRouter,
                 "Test Pool",
-                1000000 * 10**18,
-                (50000 + i * 1000) * 10**18,
-                500 * 10**18,
+                1000000 * 10 ** 18,
+                (50000 + i * 1000) * 10 ** 18,
+                500 * 10 ** 18,
                 1200
             );
         }
@@ -352,9 +319,9 @@ contract LiquidityAnalyticsTest is Test {
         LiquidityAnalytics.VolumeSnapshot[] memory history = analytics.getVolumeHistory(poolAddress, 3);
 
         assertEq(history.length, 3);
-        assertEq(history[0].volume, 53000 * 10**18); // 3rd update (50000 + 3*1000)
-        assertEq(history[1].volume, 54000 * 10**18); // 4th update (50000 + 4*1000)
-        assertEq(history[2].volume, 55000 * 10**18); // 5th update (50000 + 5*1000)
+        assertEq(history[0].volume, 53000 * 10 ** 18); // 3rd update (50000 + 3*1000)
+        assertEq(history[1].volume, 54000 * 10 ** 18); // 4th update (50000 + 4*1000)
+        assertEq(history[2].volume, 55000 * 10 ** 18); // 5th update (50000 + 5*1000)
     }
 
     function testGetVolumeHistoryInvalidRange() public {
@@ -365,21 +332,16 @@ contract LiquidityAnalyticsTest is Test {
         analytics.getVolumeHistory(makeAddr("pool"), 169); // > MAX_SNAPSHOTS
     }
 
-    function testCalculateImpermanentLoss() view public {
-        uint256 initialPrice0 = 1000 * 10**18; // $1000
-        uint256 initialPrice1 = 2000 * 10**18; // $2000
-        uint256 currentPrice0 = 1200 * 10**18; // $1200 (+20%)
-        uint256 currentPrice1 = 2000 * 10**18; // $2000 (no change)
-        uint256 amount0 = 100 * 10**18;
-        uint256 amount1 = 50 * 10**18;
+    function testCalculateImpermanentLoss() public view {
+        uint256 initialPrice0 = 1000 * 10 ** 18; // $1000
+        uint256 initialPrice1 = 2000 * 10 ** 18; // $2000
+        uint256 currentPrice0 = 1200 * 10 ** 18; // $1200 (+20%)
+        uint256 currentPrice1 = 2000 * 10 ** 18; // $2000 (no change)
+        uint256 amount0 = 100 * 10 ** 18;
+        uint256 amount1 = 50 * 10 ** 18;
 
         uint256 il = analytics.calculateImpermanentLoss(
-            initialPrice0,
-            initialPrice1,
-            currentPrice0,
-            currentPrice1,
-            amount0,
-            amount1
+            initialPrice0, initialPrice1, currentPrice0, currentPrice1, amount0, amount1
         );
 
         // Should have some impermanent loss when prices diverge
@@ -387,16 +349,14 @@ contract LiquidityAnalyticsTest is Test {
         assertLt(il, 10000); // Should be less than 100%
     }
 
-    function testCalculateImpermanentLossNoPriceDivergence() view public {
-        uint256 price0 = 1000 * 10**18;
-        uint256 price1 = 2000 * 10**18;
-        uint256 amount0 = 100 * 10**18;
-        uint256 amount1 = 50 * 10**18;
+    function testCalculateImpermanentLossNoPriceDivergence() public view {
+        uint256 price0 = 1000 * 10 ** 18;
+        uint256 price1 = 2000 * 10 ** 18;
+        uint256 amount0 = 100 * 10 ** 18;
+        uint256 amount1 = 50 * 10 ** 18;
 
         // No price change should result in no impermanent loss
-        uint256 il = analytics.calculateImpermanentLoss(
-            price0, price1, price0, price1, amount0, amount1
-        );
+        uint256 il = analytics.calculateImpermanentLoss(price0, price1, price0, price1, amount0, amount1);
 
         assertEq(il, 0);
     }
@@ -406,7 +366,7 @@ contract LiquidityAnalyticsTest is Test {
         address pool2 = makeAddr("pool2");
 
         // Set token price
-        analytics.updateTokenPrice(address(tokenA), 1000 * 10**18);
+        analytics.updateTokenPrice(address(tokenA), 1000 * 10 ** 18);
 
         // Add pools containing tokenA
         analytics.updatePoolData(
@@ -415,9 +375,9 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "Pool 1",
-            1000000 * 10**18,
-            50000 * 10**18,
-            500 * 10**18,
+            1000000 * 10 ** 18,
+            50000 * 10 ** 18,
+            500 * 10 ** 18,
             1200
         );
 
@@ -427,23 +387,21 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenC),
             dexRouter,
             "Pool 2",
-            800000 * 10**18,
-            40000 * 10**18,
-            400 * 10**18,
+            800000 * 10 ** 18,
+            40000 * 10 ** 18,
+            400 * 10 ** 18,
             1100
         );
 
-        (
-            LiquidityAnalytics.TokenMetrics memory metrics,
-            LiquidityAnalytics.PoolInfo[] memory topPools
-        ) = analytics.getTokenAnalytics(address(tokenA));
+        (LiquidityAnalytics.TokenMetrics memory metrics, LiquidityAnalytics.PoolInfo[] memory topPools) =
+            analytics.getTokenAnalytics(address(tokenA));
 
         // Check metrics
         assertEq(metrics.token, address(tokenA));
         assertEq(metrics.symbol, "TKNA");
-        assertEq(metrics.price, 1000 * 10**18);
-        assertEq(metrics.totalLiquidity, 1800000 * 10**18); // Sum of both pools
-        assertEq(metrics.volume24h, 90000 * 10**18); // Sum of both pools
+        assertEq(metrics.price, 1000 * 10 ** 18);
+        assertEq(metrics.totalLiquidity, 1800000 * 10 ** 18); // Sum of both pools
+        assertEq(metrics.volume24h, 90000 * 10 ** 18); // Sum of both pools
         assertEq(metrics.poolCount, 2);
 
         // Check top pools
@@ -452,7 +410,7 @@ contract LiquidityAnalyticsTest is Test {
         assertEq(topPools[1].poolAddress, pool2);
     }
 
-        function testDeactivatePool() public {
+    function testDeactivatePool() public {
         address poolAddress = makeAddr("testPool");
 
         // Add pool
@@ -462,21 +420,21 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "Test Pool",
-            1000000 * 10**18,
-            50000 * 10**18,
-            500 * 10**18,
+            1000000 * 10 ** 18,
+            50000 * 10 ** 18,
+            500 * 10 ** 18,
             1200
         );
 
         // Check initially active
-        (, , , , , , , , , , bool isActive) = analytics.pools(poolAddress);
+        (,,,,,,,,,, bool isActive) = analytics.pools(poolAddress);
         assertTrue(isActive);
 
         // Deactivate pool
         analytics.deactivatePool(poolAddress);
 
         // Check now inactive
-        (, , , , , , , , , , isActive) = analytics.pools(poolAddress);
+        (,,,,,,,,,, isActive) = analytics.pools(poolAddress);
         assertFalse(isActive);
     }
 
@@ -489,15 +447,7 @@ contract LiquidityAnalyticsTest is Test {
     function testAuthorizedUpdaterCanUpdate() public {
         vm.prank(authorizedUpdater);
         analytics.updatePoolData(
-            makeAddr("pool"),
-            address(tokenA),
-            address(tokenB),
-            dexRouter,
-            "Test",
-            1000,
-            100,
-            10,
-            1000
+            makeAddr("pool"), address(tokenA), address(tokenB), dexRouter, "Test", 1000, 100, 10, 1000
         );
 
         assertEq(analytics.getTotalPools(), 1);
@@ -513,20 +463,20 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "Test Pool",
-            1000000 * 10**18,
-            50000 * 10**18,
-            500 * 10**18,
+            1000000 * 10 ** 18,
+            50000 * 10 ** 18,
+            500 * 10 ** 18,
             1200
         );
 
         // Check that token metrics were updated
-        (, , , uint256 totalLiquidity, uint256 volume24h, uint256 poolCount, ) = 
-            analytics.tokenMetrics(address(tokenA));
+        (,,, uint256 totalLiquidity, uint256 volume24h, uint256 poolCount,) = analytics.tokenMetrics(address(tokenA));
 
-        assertEq(totalLiquidity, 1000000 * 10**18);
-        assertEq(volume24h, 50000 * 10**18);
+        assertEq(totalLiquidity, 1000000 * 10 ** 18);
+        assertEq(volume24h, 50000 * 10 ** 18);
         assertEq(poolCount, 1);
     }
+
     function testMultiplePoolUpdatesCreateHistory() public {
         address poolAddress = makeAddr("testPool");
 
@@ -537,9 +487,9 @@ contract LiquidityAnalyticsTest is Test {
             address(tokenB),
             dexRouter,
             "Test Pool",
-            1000000 * 10**18,
-            50000 * 10**18,
-            500 * 10**18,
+            1000000 * 10 ** 18,
+            50000 * 10 ** 18,
+            500 * 10 ** 18,
             1200
         );
 
@@ -552,15 +502,14 @@ contract LiquidityAnalyticsTest is Test {
                 address(tokenB),
                 dexRouter,
                 "Test Pool",
-                1000000 * 10**18,
-                (50000 + i * 1000) * 10**18,
-                500 * 10**18,
+                1000000 * 10 ** 18,
+                (50000 + i * 1000) * 10 ** 18,
+                500 * 10 ** 18,
                 1200
             );
         }
 
-        LiquidityAnalytics.VolumeSnapshot[] memory fullHistory = 
-            analytics.getVolumeHistory(poolAddress, 20);
+        LiquidityAnalytics.VolumeSnapshot[] memory fullHistory = analytics.getVolumeHistory(poolAddress, 20);
 
         assertEq(fullHistory.length, 11);
     }
@@ -571,7 +520,7 @@ contract LiquidityAnalyticsTest is Test {
 
         analytics.updateTokenPrice(address(tokenA), price);
 
-        (, , uint256 storedPrice, , , , ) = analytics.tokenMetrics(address(tokenA));
+        (,, uint256 storedPrice,,,,) = analytics.tokenMetrics(address(tokenA));
         assertEq(storedPrice, price);
     }
 
@@ -587,16 +536,11 @@ contract LiquidityAnalyticsTest is Test {
         currentPrice0 = bound(currentPrice0, 1e15, 1e25);
         currentPrice1 = bound(currentPrice1, 1e15, 1e25);
 
-        uint256 amount0 = 100 * 10**18;
-        uint256 amount1 = 50 * 10**18;
+        uint256 amount0 = 100 * 10 ** 18;
+        uint256 amount1 = 50 * 10 ** 18;
 
         uint256 il = analytics.calculateImpermanentLoss(
-            initialPrice0,
-            initialPrice1,
-            currentPrice0,
-            currentPrice1,
-            amount0,
-            amount1
+            initialPrice0, initialPrice1, currentPrice0, currentPrice1, amount0, amount1
         );
 
         // IL should never exceed 100%

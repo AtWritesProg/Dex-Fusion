@@ -11,23 +11,13 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
  * @dev A contract to track and analyze liquidity provision and removal events.
  * Provides real-time data on pools, volumes and liquidity metrics.
  */
-
 contract LiquidityAnalytics is Ownable {
-    
     // Events
     event PoolDataUpdated(
-        address indexed pool,
-        address indexed dex,
-        uint256 liquidity,
-        uint256 volume24h,
-        uint256 timestamp
+        address indexed pool, address indexed dex, uint256 liquidity, uint256 volume24h, uint256 timestamp
     );
 
-    event PriceUpdated(
-        address indexed token,
-        uint256 price,
-        uint256 timestamp
-    );
+    event PriceUpdated(address indexed token, uint256 price, uint256 timestamp);
 
     // Structs
 
@@ -40,7 +30,7 @@ contract LiquidityAnalytics is Ownable {
         uint256 liquidity; //Total Liquidity in USD
         uint256 volume24h; //24h volume in USD
         uint256 fees24h;
-        uint256 apr;    // Annual Percentage rate
+        uint256 apr; // Annual Percentage rate
         uint256 lastUpdated;
         bool isActive;
     }
@@ -74,13 +64,9 @@ contract LiquidityAnalytics is Ownable {
     uint256 public constant SNAPSHOT_INTERVAL = 1 hours;
     uint256 public constant MAX_SNAPSHOTS = 168; // 1 week of hourly data
 
-    
     //Modifier
     modifier onlyAuthorized() {
-        require(
-            authorizedUpdaters[msg.sender] || msg.sender == owner(),
-            "Not Authorized"
-        );
+        require(authorizedUpdaters[msg.sender] || msg.sender == owner(), "Not Authorized");
         _;
     }
 
@@ -98,338 +84,328 @@ contract LiquidityAnalytics is Ownable {
         uint256 volume24h,
         uint256 fees24h,
         uint256 apr
-        ) external onlyAuthorized{
-            require(poolAddress != address(0), "Invalid Pool address");
+    ) external onlyAuthorized {
+        require(poolAddress != address(0), "Invalid Pool address");
 
-            bool isNewPool = pools[poolAddress].poolAddress == address(0);
+        bool isNewPool = pools[poolAddress].poolAddress == address(0);
 
-            pools[poolAddress] = PoolInfo({
-                poolAddress: poolAddress,
-                token0: token0,
-                token1: token1,
-                dexRouter: dexRouter,
-                dexName: dexName,
-                liquidity: liquidity,
-                volume24h: volume24h,
-                fees24h: fees24h,
-                apr: apr,
-                lastUpdated: block.timestamp,
-                isActive: true
-            });
+        pools[poolAddress] = PoolInfo({
+            poolAddress: poolAddress,
+            token0: token0,
+            token1: token1,
+            dexRouter: dexRouter,
+            dexName: dexName,
+            liquidity: liquidity,
+            volume24h: volume24h,
+            fees24h: fees24h,
+            apr: apr,
+            lastUpdated: block.timestamp,
+            isActive: true
+        });
 
-            if (isNewPool) {
-                allPools.push(poolAddress);
-            }
-
-            _updateTokenMetrics(token0);
-            _updateTokenMetrics(token1);
-
-            
-            _addVolumeSnapshot(poolAddress, volume24h, liquidity, 0);
-
-            emit PoolDataUpdated(poolAddress, dexRouter, liquidity, volume24h, block.timestamp);
+        if (isNewPool) {
+            allPools.push(poolAddress);
         }
 
-        /**
-         * @dev Update token price
-         */
+        _updateTokenMetrics(token0);
+        _updateTokenMetrics(token1);
 
-        function updateTokenPrice(address token, uint256 price) external onlyAuthorized {
-            require(token != address(0), "Invalid Token");
-            require(price > 0, "Invalid Price");
+        _addVolumeSnapshot(poolAddress, volume24h, liquidity, 0);
 
-            if (tokenMetrics[token].token == address(0)) {
-                _initializeTokenMetrics(token);
-            }
+        emit PoolDataUpdated(poolAddress, dexRouter, liquidity, volume24h, block.timestamp);
+    }
 
-            tokenMetrics[token].price = price;
-            tokenMetrics[token].lastUpdated = block.timestamp;
+    /**
+     * @dev Update token price
+     */
+    function updateTokenPrice(address token, uint256 price) external onlyAuthorized {
+        require(token != address(0), "Invalid Token");
+        require(price > 0, "Invalid Price");
 
-            emit PriceUpdated(token, price, block.timestamp);
+        if (tokenMetrics[token].token == address(0)) {
+            _initializeTokenMetrics(token);
         }
 
-        /**
-         * @dev
-         */
-        function getPoolsForPair(address token0, address token1) external view returns (PoolInfo[] memory) {
-            uint256 count = 0;
-            
-            // Count Matching Pool
-            for (uint256 i = 0; i < allPools.length; i++) {
-                PoolInfo memory pool = pools[allPools[i]];
-                if(pool.isActive &&
-                ((pool.token0 == token0 && pool.token1 == token1) ||
-                (pool.token0 == token1 && pool.token1 == token0))) {
-                    count++;
+        tokenMetrics[token].price = price;
+        tokenMetrics[token].lastUpdated = block.timestamp;
+
+        emit PriceUpdated(token, price, block.timestamp);
+    }
+
+    /**
+     * @dev
+     */
+    function getPoolsForPair(address token0, address token1) external view returns (PoolInfo[] memory) {
+        uint256 count = 0;
+
+        // Count Matching Pool
+        for (uint256 i = 0; i < allPools.length; i++) {
+            PoolInfo memory pool = pools[allPools[i]];
+            if (
+                pool.isActive
+                    && (
+                        (pool.token0 == token0 && pool.token1 == token1) || (pool.token0 == token1 && pool.token1 == token0)
+                    )
+            ) {
+                count++;
+            }
+        }
+
+        PoolInfo[] memory result = new PoolInfo[](count);
+        uint256 index = 0;
+
+        for (uint256 i = 0; i < allPools.length; i++) {
+            PoolInfo memory pool = pools[allPools[i]];
+            if (
+                pool.isActive
+                    && (
+                        (pool.token0 == token0 && pool.token1 == token1) || (pool.token0 == token1 && pool.token1 == token0)
+                    )
+            ) {
+                result[index] = pool;
+                index++;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @dev Get top pools by liquidity
+     */
+    function getTopPoolsByLiquidity(uint256 limit) external view returns (PoolInfo[] memory) {
+        require(limit > 0, "Invalid Limit");
+
+        // Step 1: collect active pools
+        PoolInfo[] memory temp = new PoolInfo[](allPools.length);
+        uint256 activeCount = 0;
+        for (uint256 i = 0; i < allPools.length; i++) {
+            if (pools[allPools[i]].isActive) {
+                temp[activeCount] = pools[allPools[i]];
+                activeCount++;
+            }
+        }
+        require(activeCount > 0, "No active pools");
+
+        // Step 2: shrink array to activeCount only
+        PoolInfo[] memory allActivePools = new PoolInfo[](activeCount);
+        for (uint256 i = 0; i < activeCount; i++) {
+            allActivePools[i] = temp[i];
+        }
+
+        // Step 3: bubble sort only over activeCount
+        for (uint256 i = 0; i < activeCount - 1; i++) {
+            for (uint256 j = 0; j < activeCount - i - 1; j++) {
+                if (allActivePools[j].liquidity < allActivePools[j + 1].liquidity) {
+                    PoolInfo memory t = allActivePools[j];
+                    allActivePools[j] = allActivePools[j + 1];
+                    allActivePools[j + 1] = t;
                 }
             }
-
-            PoolInfo[] memory result = new PoolInfo[](count);
-            uint256 index = 0;
-
-            for (uint256 i = 0; i < allPools.length; i++) {
-                PoolInfo memory pool = pools[allPools[i]];
-                if (pool.isActive && 
-                ((pool.token0 == token0 && pool.token1 == token1) ||
-                 (pool.token0 == token1 && pool.token1 == token0))) {
-                    result[index] = pool;
-                    index++;
-                }
-            }
-
-            return result;
         }
 
-        /**
-         * @dev Get top pools by liquidity
-         */
-        function getTopPoolsByLiquidity(uint256 limit) external view returns (PoolInfo[] memory) {
-            require(limit > 0, "Invalid Limit");
-
-            // Step 1: collect active pools
-            PoolInfo[] memory temp = new PoolInfo[](allPools.length);
-            uint256 activeCount = 0;
-            for (uint256 i = 0; i < allPools.length; i++) {
-                if (pools[allPools[i]].isActive) {
-                    temp[activeCount] = pools[allPools[i]];
-                    activeCount++;
-                }
-            }
-            require(activeCount > 0, "No active pools");
-
-            // Step 2: shrink array to activeCount only
-            PoolInfo[] memory allActivePools = new PoolInfo[](activeCount);
-            for (uint256 i = 0; i < activeCount; i++) {
-                allActivePools[i] = temp[i];
-            }
-
-            // Step 3: bubble sort only over activeCount
-            for (uint256 i = 0; i < activeCount - 1; i++) {
-                for (uint256 j = 0; j < activeCount - i - 1; j++) {
-                    if (allActivePools[j].liquidity < allActivePools[j + 1].liquidity) {
-                        PoolInfo memory t = allActivePools[j];
-                        allActivePools[j] = allActivePools[j + 1];
-                        allActivePools[j + 1] = t;
-                    }
-                }
-            }
-
-            // Step 4: return top N
-            uint256 returnCount = limit < activeCount ? limit : activeCount;
-            PoolInfo[] memory result = new PoolInfo[](returnCount);
-            for (uint256 i = 0; i < returnCount; i++) {
-                result[i] = allActivePools[i];
-            }
-
-            return result;
+        // Step 4: return top N
+        uint256 returnCount = limit < activeCount ? limit : activeCount;
+        PoolInfo[] memory result = new PoolInfo[](returnCount);
+        for (uint256 i = 0; i < returnCount; i++) {
+            result[i] = allActivePools[i];
         }
 
+        return result;
+    }
 
+    /**
+     * @dev Get Volume history for a pool
+     */
+    function getVolumeHistory(address poolAddress, uint256 numhours) external view returns (VolumeSnapshot[] memory) {
+        require(numhours > 0 && numhours <= MAX_SNAPSHOTS, "Invalid time range");
 
-        /**
-         * @dev Get Volume history for a pool
-         */
-        function getVolumeHistory(address poolAddress, uint256 numhours) external view returns (VolumeSnapshot[] memory) {
-            require(numhours > 0 && numhours <= MAX_SNAPSHOTS, "Invalid time range");
+        VolumeSnapshot[] storage history = volumeHistory[poolAddress];
+        uint256 startIndex = history.length > numhours ? history.length - numhours : 0;
+        uint256 resultLength = history.length - startIndex;
 
-            VolumeSnapshot[] storage history = volumeHistory[poolAddress];
-            uint256 startIndex = history.length > numhours ? history.length - numhours : 0;
-            uint256 resultLength = history.length - startIndex;
+        VolumeSnapshot[] memory result = new VolumeSnapshot[](resultLength);
 
-            VolumeSnapshot[] memory result = new VolumeSnapshot[](resultLength);
-        
-            for (uint256 i = 0; i < resultLength; i++) {
-                result[i] = history[startIndex + i];
-            }
-            
-            return result;
+        for (uint256 i = 0; i < resultLength; i++) {
+            result[i] = history[startIndex + i];
         }
 
-        /**
-         * @dev  Calculate Impermanent Loss for a position
-         */
-        function calculateImpermanentLoss(
-            uint256 initialPrice0,
-            uint256 initialPrice1,
-            uint256 currentPrice0,
-            uint256 currentPrice1,
-            uint256 amount0,
-            uint256 amount1
-        ) external pure returns (uint256 impermanentLoss) {
-            // Prevent division by zero
-            require(initialPrice0 > 0 && initialPrice1 > 0 && currentPrice0 > 0 && currentPrice1 > 0, "Invalid prices");
-            
-            // Calculate price ratio (how much token0 changed relative to token1)
-            // k = (P0_current / P0_initial) / (P1_current / P1_initial)
-            // Rearranged to avoid precision loss: k = (P0_current * P1_initial) / (P0_initial * P1_current)
-            uint256 k = (currentPrice0 * initialPrice1 * 1e18) / (initialPrice0 * currentPrice1);
-            
-            // If k = 1e18 (no relative price change), there's no impermanent loss
-            if (k == 1e18) {
-                return 0;
-            }
-            
-            // HODL value
-            uint256 hodlValue = (amount0 * currentPrice0 + amount1 * currentPrice1) / 1e18;
-            
-            // LP multiplier = 2 * sqrt(k) / (1 + k)
-            uint256 sqrtK = sqrt(k); // k already has 1e18 precision
-            uint256 numerator = 2 * sqrtK;
-            uint256 denominator = 1e18 + k / 1e18; // Normalize k back for addition
-            uint256 lpMultiplier = (numerator * 1e18) / denominator;
-            
-            uint256 lpValue = (hodlValue * lpMultiplier) / 1e18;
-            
-            if (hodlValue > lpValue) {
-                impermanentLoss = ((hodlValue - lpValue) * 10000) / hodlValue; // In basis points
-            } else {
-                // This shouldn't happen with correct IL formula, but safety check
-                impermanentLoss = 0;
+        return result;
+    }
+
+    /**
+     * @dev  Calculate Impermanent Loss for a position
+     */
+    function calculateImpermanentLoss(
+        uint256 initialPrice0,
+        uint256 initialPrice1,
+        uint256 currentPrice0,
+        uint256 currentPrice1,
+        uint256 amount0,
+        uint256 amount1
+    ) external pure returns (uint256 impermanentLoss) {
+        // Prevent division by zero
+        require(initialPrice0 > 0 && initialPrice1 > 0 && currentPrice0 > 0 && currentPrice1 > 0, "Invalid prices");
+
+        // Calculate price ratio (how much token0 changed relative to token1)
+        // k = (P0_current / P0_initial) / (P1_current / P1_initial)
+        // Rearranged to avoid precision loss: k = (P0_current * P1_initial) / (P0_initial * P1_current)
+        uint256 k = (currentPrice0 * initialPrice1 * 1e18) / (initialPrice0 * currentPrice1);
+
+        // If k = 1e18 (no relative price change), there's no impermanent loss
+        if (k == 1e18) {
+            return 0;
+        }
+
+        // HODL value
+        uint256 hodlValue = (amount0 * currentPrice0 + amount1 * currentPrice1) / 1e18;
+
+        // LP multiplier = 2 * sqrt(k) / (1 + k)
+        uint256 sqrtK = sqrt(k); // k already has 1e18 precision
+        uint256 numerator = 2 * sqrtK;
+        uint256 denominator = 1e18 + k / 1e18; // Normalize k back for addition
+        uint256 lpMultiplier = (numerator * 1e18) / denominator;
+
+        uint256 lpValue = (hodlValue * lpMultiplier) / 1e18;
+
+        if (hodlValue > lpValue) {
+            impermanentLoss = ((hodlValue - lpValue) * 10000) / hodlValue; // In basis points
+        } else {
+            // This shouldn't happen with correct IL formula, but safety check
+            impermanentLoss = 0;
+        }
+    }
+
+    /**
+     * @dev Get token analytics
+     */
+    function getTokenAnalytics(address token)
+        external
+        view
+        returns (TokenMetrics memory metrics, PoolInfo[] memory topPools)
+    {
+        metrics = tokenMetrics[token];
+
+        // Get top 5 pools for this token
+        uint256 count = 0;
+        for (uint256 i = 0; i < allPools.length; i++) {
+            PoolInfo memory pool = pools[allPools[i]];
+            if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
+                count++;
             }
         }
 
-        /**
-         * @dev Get token analytics 
-         */
-        function getTokenAnalytics(address token) external view returns (
-            TokenMetrics memory metrics,
-            PoolInfo[] memory topPools
-        ) {
-            metrics = tokenMetrics[token];
+        topPools = new PoolInfo[](count > 5 ? 5 : count);
+        uint256 index = 0;
 
-            // Get top 5 pools for this token
-            uint256 count = 0;
-            for (uint256 i = 0; i < allPools.length; i++) {
-                PoolInfo memory pool = pools[allPools[i]];
-                if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
-                    count++;
-                }
+        for (uint256 i = 0; i < allPools.length && index < topPools.length; i++) {
+            PoolInfo memory pool = pools[allPools[i]];
+            if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
+                topPools[index] = pool;
+                index++;
             }
+        }
+    }
 
-            topPools = new PoolInfo[](count > 5 ? 5 : count);
-            uint256 index = 0;
-
-            for (uint256 i = 0; i < allPools.length && index < topPools.length; i++) {
-                PoolInfo memory pool = pools[allPools[i]];
-                if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
-                    topPools[index] = pool;
-                    index++;
-                }
-            }            
+    /**
+     * @dev Internal function to update token metrics based on current pool data.
+     */
+    function _updateTokenMetrics(address token) internal {
+        if (tokenMetrics[token].token == address(0)) {
+            _initializeTokenMetrics(token);
         }
 
-        /**
-         * @dev Internal function to update token metrics based on current pool data.
-         */
+        uint256 totalLiquidity = 0;
+        uint256 totalVolume = 0;
+        uint256 poolCount = 0;
 
-        function _updateTokenMetrics(address token) internal {
-            if(tokenMetrics[token].token == address(0)) {
-                _initializeTokenMetrics(token);
-            }
-
-            uint256 totalLiquidity = 0;
-            uint256 totalVolume = 0;
-            uint256 poolCount = 0;
-
-            for (uint256 i = 0; i < allPools.length; i++) {
-                PoolInfo memory pool = pools[allPools[i]];
-                if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
+        for (uint256 i = 0; i < allPools.length; i++) {
+            PoolInfo memory pool = pools[allPools[i]];
+            if (pool.isActive && (pool.token0 == token || pool.token1 == token)) {
                 totalLiquidity += pool.liquidity;
                 totalVolume += pool.volume24h;
                 poolCount++;
-                }
-            }
-
-            tokenMetrics[token].totalLiquidity = totalLiquidity;
-            tokenMetrics[token].volume24h = totalVolume;
-            tokenMetrics[token].poolCount = poolCount;
-            tokenMetrics[token].lastUpdated = block.timestamp;
-
-        }
-
-        function _initializeTokenMetrics(address token) internal {
-            // Get token symbol
-            string memory symbol = "UNKNOWN";
-            try IERC20Metadata(token).symbol() returns (string memory _symbol) {
-                symbol = _symbol;
-            } catch {}
-
-            tokenMetrics[token] = TokenMetrics({
-                token: token,
-                symbol: symbol,
-                price: 0,
-                totalLiquidity: 0,
-                volume24h: 0,
-                poolCount: 0,
-                lastUpdated: block.timestamp
-            });
-
-            trackedTokens.push(token);
-        }
-
-        function _addVolumeSnapshot(
-            address poolAddress,
-            uint256 volume,
-            uint256 liquidity,
-            uint256 price
-        ) internal {
-            VolumeSnapshot[] storage history = volumeHistory[poolAddress];
-    
-            //Add new snapshots
-            history.push(VolumeSnapshot({
-                timestamp: block.timestamp,
-                volume: volume,
-                liquidity: liquidity,
-                price: price
-            }));
-
-            // Keep only recent snapshots
-            if (history.length > MAX_SNAPSHOTS) {
-                for (uint256 i = 0; i < history.length - 1; i++) {
-                    history[i] = history[i + 1];
-                }
-
-                history.pop();
             }
         }
 
-        function sqrt(uint256 x) internal pure returns (uint256) {
-            if (x == 0) return 0;
-            uint256 z = (x + 1) / 2;
-            uint256 y = x;
-            while (z < y) {
-                y = z;
-                z = (x / z + z ) / 2;
+        tokenMetrics[token].totalLiquidity = totalLiquidity;
+        tokenMetrics[token].volume24h = totalVolume;
+        tokenMetrics[token].poolCount = poolCount;
+        tokenMetrics[token].lastUpdated = block.timestamp;
+    }
+
+    function _initializeTokenMetrics(address token) internal {
+        // Get token symbol
+        string memory symbol = "UNKNOWN";
+        try IERC20Metadata(token).symbol() returns (string memory _symbol) {
+            symbol = _symbol;
+        } catch {}
+
+        tokenMetrics[token] = TokenMetrics({
+            token: token,
+            symbol: symbol,
+            price: 0,
+            totalLiquidity: 0,
+            volume24h: 0,
+            poolCount: 0,
+            lastUpdated: block.timestamp
+        });
+
+        trackedTokens.push(token);
+    }
+
+    function _addVolumeSnapshot(address poolAddress, uint256 volume, uint256 liquidity, uint256 price) internal {
+        VolumeSnapshot[] storage history = volumeHistory[poolAddress];
+
+        //Add new snapshots
+        history.push(VolumeSnapshot({timestamp: block.timestamp, volume: volume, liquidity: liquidity, price: price}));
+
+        // Keep only recent snapshots
+        if (history.length > MAX_SNAPSHOTS) {
+            for (uint256 i = 0; i < history.length - 1; i++) {
+                history[i] = history[i + 1];
             }
-            return y;
-        }
 
-        /**
-         * @dev Authorize address to update data 
-         */
-        function setAuthorizedUpdater(address updater, bool authorized) external onlyOwner {
-            authorizedUpdaters[updater] = authorized;
+            history.pop();
         }
+    }
 
-        /**
-         * @dev Deactivate Pool
-         */
-        function deactivatePool(address poolAddress) external onlyOwner {
-            pools[poolAddress].isActive = false;
+    function sqrt(uint256 x) internal pure returns (uint256) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        uint256 y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
         }
+        return y;
+    }
 
-        /**
-         * @dev Get total number of pools
-         */
-        function getTotalPools() external view returns (uint256) {
-            return allPools.length;
-        }
+    /**
+     * @dev Authorize address to update data
+     */
+    function setAuthorizedUpdater(address updater, bool authorized) external onlyOwner {
+        authorizedUpdaters[updater] = authorized;
+    }
 
-        /**
-         * @dev Get total number of tracked tokens 
-         */
-        function getTotalTrackedTokens() external view returns (uint256) {
-            return trackedTokens.length;
-        }
+    /**
+     * @dev Deactivate Pool
+     */
+    function deactivatePool(address poolAddress) external onlyOwner {
+        pools[poolAddress].isActive = false;
+    }
 
+    /**
+     * @dev Get total number of pools
+     */
+    function getTotalPools() external view returns (uint256) {
+        return allPools.length;
+    }
+
+    /**
+     * @dev Get total number of tracked tokens
+     */
+    function getTotalTrackedTokens() external view returns (uint256) {
+        return trackedTokens.length;
+    }
 }

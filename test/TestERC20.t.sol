@@ -7,12 +7,10 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 contract TestERC20 is ERC20, Ownable {
     uint8 private _decimals;
 
-    constructor(
-        string memory name,
-        string memory symbol,
-        uint8 decimals_,
-        uint256 totalSupply_
-    ) ERC20(name, symbol) Ownable(msg.sender) {
+    constructor(string memory name, string memory symbol, uint8 decimals_, uint256 totalSupply_)
+        ERC20(name, symbol)
+        Ownable(msg.sender)
+    {
         _decimals = decimals_;
         _mint(msg.sender, totalSupply_);
     }
@@ -33,7 +31,7 @@ contract TestERC20 is ERC20, Ownable {
      */
     function mintBatch(address[] memory recipients, uint256[] memory amounts) public onlyOwner {
         require(recipients.length == amounts.length, "Arrays length mismatch");
-        
+
         for (uint256 i = 0; i < recipients.length; i++) {
             _mint(recipients[i], amounts[i]);
         }
@@ -52,7 +50,7 @@ contract TestERC20 is ERC20, Ownable {
     function burnFrom(address account, uint256 amount) public {
         uint256 currentAllowance = allowance(account, msg.sender);
         require(currentAllowance >= amount, "Burn amount exceeds allowance");
-        
+
         _approve(account, msg.sender, currentAllowance - amount);
         _burn(account, amount);
     }

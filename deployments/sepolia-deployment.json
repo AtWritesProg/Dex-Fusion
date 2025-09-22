@@ -1,0 +1,19 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "timestamp": "1758537672",
+  "deployer": "0xd08ae577D973648f708B7cBFBBF112948F1Ea3fa",
+  "contracts": {
+    "DexFusionAggregator": "0x73A61b847b030a2F84cb6DD59c6A6Dc59AdcB6f4",
+    "LiquidityAnalytics": "0xFB45bcC417a72ad5c6877C6359869f5c9d21c2dD"
+  },
+  "testTokens": {
+    "USDC": "0xa89DD3caD594FAa733B42f9595d8fE39CF1213b7",
+    "WETH": "0xFB25e0f3FcC0ED827E1487126bbe159a7cA677a0",
+    "DAI": "0x706d4B7e1AD0B4171b261CA8A77EdaE3B9d75763"
+  },
+  "configuration": {
+    "platformFee": "0.3%",
+    "feeRecipient": "0xd08ae577D973648f708B7cBFBBF112948F1Ea3fa"
+  }
+}

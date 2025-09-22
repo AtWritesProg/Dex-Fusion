@@ -39,13 +39,15 @@ interface IUniswapV2Router {
     ) external returns (uint256[] memory amounts);
 
     function getAmountsOut(uint256 amountIn, address[] calldata path)
-        external view returns (uint256[] memory amounts);
+        external
+        view
+        returns (uint256[] memory amounts);
 }
 
 contract DexFusionAggregator is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
-    // Events 
+    // Events
     event SwapExecuted(
         address indexed user,
         address indexed tokenIn,
@@ -88,9 +90,9 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
 
     mapping(address => DexInfo) public supportedDexs;
     address[] public dexList;
-    uint256 public platformFee = 30;  //0.3% in basis points
+    uint256 public platformFee = 30; //0.3% in basis points
     address public feeRecipient;
-    uint256 public constant MAX_SLIPPAGE = 5000;  //50% max slippage
+    uint256 public constant MAX_SLIPPAGE = 5000; //50% max slippage
 
     // DEX type constant
     uint8 public constant UNISWAP_V2_TYPE = 0;
@@ -109,13 +111,7 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         require(_fee <= 1000, "Fee too high");
         require(_dexType <= 1, "Invalid DEX type");
 
-        supportedDexs[_router] = DexInfo({
-            router: _router,
-            name: _name,
-            isActive: true,
-            fee: _fee,
-            dexType: _dexType
-        });
+        supportedDexs[_router] = DexInfo({router: _router, name: _name, isActive: true, fee: _fee, dexType: _dexType});
 
         dexList.push(_router);
         emit DexAdded(_router, _name, true);
@@ -129,7 +125,7 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         require(supportedDexs[params.dexRouter].isActive, "DEX not supported");
         require(params.amountIn > 0, "Invalid amount");
 
-        IERC20(params.tokenIn).safeTransferFrom(msg.sender,address(this),params.amountIn);
+        IERC20(params.tokenIn).safeTransferFrom(msg.sender, address(this), params.amountIn);
 
         uint256 feeAmount = (params.amountIn * platformFee) / 10000;
         uint256 swapAmount = params.amountIn - feeAmount;
@@ -152,28 +148,19 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         IERC20(params.tokenOut).safeTransfer(msg.sender, amountOut);
 
         emit SwapExecuted(
-            msg.sender,
-            params.tokenIn,
-            params.tokenOut,
-            params.amountIn,
-            amountOut,
-            params.dexRouter,
-            feeAmount
+            msg.sender, params.tokenIn, params.tokenOut, params.amountIn, amountOut, params.dexRouter, feeAmount
         );
     }
 
     /**
      * @dev Internal function to execute swap on specific DEX
      */
-    function _executeSwapOnDex(
-        SwapParams memory params,
-        uint256 swapAmount
-    ) internal returns (uint256 amountOut) {
+    function _executeSwapOnDex(SwapParams memory params, uint256 swapAmount) internal returns (uint256 amountOut) {
         DexInfo memory dexInfo = supportedDexs[params.dexRouter];
 
         if (dexInfo.dexType == UNISWAP_V2_TYPE) {
             amountOut = _executeUniswapV2Swap(params, swapAmount);
-        } else if (dexInfo.dexType ==  UNISWAP_V3_TYPE) {
+        } else if (dexInfo.dexType == UNISWAP_V3_TYPE) {
             amountOut = _executeUniswapV3Swap(params, swapAmount);
         } else {
             revert("Unsupported DEX type");
@@ -190,22 +177,13 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
 
         uint256 balanceBefore = IERC20(params.tokenOut).balanceOf(address(this));
 
-        IUniswapV2Router(params.dexRouter).swapExactTokensForTokens(
-            swapAmount,
-            0,
-            path,
-            address(this),
-            params.deadline
-        );
+        IUniswapV2Router(params.dexRouter).swapExactTokensForTokens(swapAmount, 0, path, address(this), params.deadline);
 
         uint256 balanceAfter = IERC20(params.tokenOut).balanceOf(address(this));
         amountOut = balanceAfter - balanceBefore;
     }
 
-    function _executeUniswapV3Swap(
-        SwapParams memory params,
-        uint256 swapAmount
-    ) internal returns (uint256 amountOut) {
+    function _executeUniswapV3Swap(SwapParams memory params, uint256 swapAmount) internal returns (uint256 amountOut) {
         IUniswapV3Router.ExactInputSingleParams memory v3Params = IUniswapV3Router.ExactInputSingleParams({
             tokenIn: params.tokenIn,
             tokenOut: params.tokenOut,
@@ -222,12 +200,11 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
     /**
      * @dev Get quotes from all supported DEXs
      */
-
-    function getAllQuotes(
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn
-    ) external view returns (RouteQuote[] memory quotes) {
+    function getAllQuotes(address tokenIn, address tokenOut, uint256 amountIn)
+        external
+        view
+        returns (RouteQuote[] memory quotes)
+    {
         uint256 activeCount = 0;
 
         // Count active DEXs
@@ -243,8 +220,7 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         for (uint256 i = 0; i < dexList.length; i++) {
             address dexRouter = dexList[i];
             if (supportedDexs[dexRouter].isActive) {
-                try this.getQuoteFromDex(tokenIn, tokenOut, amountIn, dexRouter)
-                returns (uint256 amountOut) {
+                try this.getQuoteFromDex(tokenIn, tokenOut, amountIn, dexRouter) returns (uint256 amountOut) {
                     quotes[index] = RouteQuote({
                         dexRouter: dexRouter,
                         amountOut: amountOut,
@@ -265,8 +241,11 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         }
     }
 
-
-    function getQuoteFromDex(address tokenIn, address tokenOut, uint256 amountIn, address dexRouter) external view returns (uint256 amountOut) {
+    function getQuoteFromDex(address tokenIn, address tokenOut, uint256 amountIn, address dexRouter)
+        external
+        view
+        returns (uint256 amountOut)
+    {
         require(supportedDexs[dexRouter].isActive, "Dex not Active");
 
         // Only support V2 style quotes for now
@@ -286,15 +265,18 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
     }
 
     function toggleDexStatus(address dexRouter) external onlyOwner {
-       require(supportedDexs[dexRouter].router != address(0), "DEX not found");
-       supportedDexs[dexRouter].isActive = !supportedDexs[dexRouter].isActive;
-   }
+        require(supportedDexs[dexRouter].router != address(0), "DEX not found");
+        supportedDexs[dexRouter].isActive = !supportedDexs[dexRouter].isActive;
+    }
 
     /**
      * @dev Find the best routes for a swap
      */
-
-    function findBestRoute(address tokenIn, address tokenOut, uint256 amountIn)external view returns (address bestDex, uint256 bestAmountOut){
+    function findBestRoute(address tokenIn, address tokenOut, uint256 amountIn)
+        external
+        view
+        returns (address bestDex, uint256 bestAmountOut)
+    {
         RouteQuote[] memory quotes = this.getAllQuotes(tokenIn, tokenOut, amountIn);
 
         bestAmountOut = 0;
@@ -311,10 +293,9 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
     /**
      * @dev Estimate gas for DEX swap
      */
-
     function _estimateGas(address dexRouter) internal view returns (uint256) {
         DexInfo memory dexInfo = supportedDexs[dexRouter];
-        if(dexInfo.dexType == UNISWAP_V2_TYPE) {
+        if (dexInfo.dexType == UNISWAP_V2_TYPE) {
             return 150000;
         } else if (dexInfo.dexType == UNISWAP_V3_TYPE) {
             return 180000;
@@ -323,11 +304,10 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Update platform fee 
+     * @dev Update platform fee
      */
-
     function updatePlatformFee(uint256 _newFee) external onlyOwner {
-        require(_newFee <= 1000 , "Fee too high");
+        require(_newFee <= 1000, "Fee too high");
         uint256 oldFee = platformFee;
         platformFee = _newFee;
         emit FeeUpdated(oldFee, _newFee);
@@ -379,5 +359,4 @@ contract DexFusionAggregator is ReentrancyGuard, Ownable {
         }
         return activeDexs;
     }
-
 }
